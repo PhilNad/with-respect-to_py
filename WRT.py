@@ -113,6 +113,9 @@ class DbConnector:
         self.__opened_connection = None
         self.__opened_world_name = None
         return
+    def __del__(self):
+        if self.__opened_connection is not None:
+            self.__opened_connection.close()
     def In(self, worldName: str) -> GetSet:
         #If the connection is already open, simply return it
         if self.__opened_connection is not None and self.__opened_world_name == worldName:
