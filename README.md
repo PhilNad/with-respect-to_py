@@ -16,11 +16,11 @@ Simple library that manages databases of 3D transformations with explicit access
   - If setting a transform would create a loop, the node is reassigned to a new parent
  
 ### Python Interface
-- Connect: `SE3DB = WithRespectTo.in('my-world')`
-- Getter: `SE3DB.get('end-effector').wrt('table').ei('world')`
-- Setter: `SE3DB.set('end-effector').wrt('table').ei('world').as(spatialmath.SE3(...))`
+- Connect: `SE3DB = WithRespectTo().In('my-world')`
+- Getter: `SE3DB.Get('end-effector').Wrt('table').Ei('world')`
+- Setter: `SE3DB.Set('end-effector').Wrt('table').Ei('world').As(spatialmath.SE3(...))`
 
 ### General Interface
 Can be used by calling the python program with a single string as the argument. We could also support multiple arguments (--get, --set, --in, --wrt, --ei, --as)
-- Get: `"in(my-world).get(end-effector).wrt(table).ei(world)"`
-- Set: `"in(my-world).set(end-effector).wrt(table).ei(world).as([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])"`
+- Get: `"In(my-world).Get(end-effector).Wrt(table).Ei(world)"`
+- Set: `"In(my-world).Set(end-effector).Wrt(table).Ei(world).As([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])"`
