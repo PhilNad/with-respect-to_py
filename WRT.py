@@ -1,8 +1,10 @@
 import numpy as np
-import sqlite3
-import sympy
+import sqlite3 as sql
+import re
+import sympy #spatialmat depends on sympy
 from spatialmath import SE3
 from anytree import NodeMixin, RenderTree
+from pathlib import Path
 
 
 class PoseNode(SE3, NodeMixin):
@@ -15,9 +17,15 @@ class PoseNode(SE3, NodeMixin):
 
 class SetAs:
     def __init__(self, frame_name:str, ref_frame_name:str, in_frame_name:str) -> None:
+        self.verifyInput(frame_name)
+        self.verifyInput(ref_frame_name)
+        self.verifyInput(in_frame_name)
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
         self.__in_frame_name  = in_frame_name
+    def verifyInput(self, input_string:str):
+        if not re.match("^[0-9a-z\-]+$", input_string):
+            raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the frame name: {}".format(input_string))
     def As(self, transfo_matrix):
         assert(type(transfo_matrix) == np.ndarray or type(transfo_matrix) == SE3)
         if type(transfo_matrix) is np.array:
@@ -28,9 +36,15 @@ class SetAs:
 
 class GetExpressedIn:
     def __init__(self, frame_name:str, ref_frame_name:str) -> None:
+        self.verifyInput(frame_name)
+        self.verifyInput(ref_frame_name)
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
+    def verifyInput(self, input_string:str):
+        if not re.match("^[0-9a-z\-]+$", input_string):
+            raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the frame name: {}".format(input_string))
     def Ei(self, in_frame_name: str) -> SE3:
+        self.verifyInput(in_frame_name)
         #Using Drake's monogram notation (https://drake.mit.edu/doxygen_cxx/group__multibody__notation__basics.html)
 
         #1) Make sure __frame_name, __ref_frame_name and in_frame_name exist in the DB
@@ -74,13 +88,47 @@ class GetSet:
     def Get(self, frame_name: str) -> Getter:
         return Getter(frame_name)
     def Set(self, frame_name: str) -> Setter:
+        if frame_name == "world":
+            raise ValueError("Cannot change the 'world' reference frame as it's assumed to be an inertial/immobile frame.")
         return Setter(frame_name)
 
 class DbConnector:
-    '''Connect to Sqlite database and create new world if needed.'''
+    '''Connect to Sqlite database and create new world if needed. 
+    To limit concurrent actions, each world is in its one database/file.
+    When a new world is mentioned, a new database is created.'''
     def __init__(self):
         return
     def In(self, worldName: str) -> GetSet:
+        if not re.match("^[0-9a-z\-]+$", worldName):
+            raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the world name.")
+        #Get a list of existing databases
+        current_dir = Path('.')
+        db_list = [x for x in current_dir.iterdir() if x.is_file() and x.suffix == '.db']
+        db_name_list = [x.stem for x in db_list]
+        #If the world name is not in the list, create a new database
+        if worldName not in db_name_list:
+            con = sql.connect(worldName)
+            cur = con.cursor()
+            with con:
+                cur.executescript("""
+                    CREATE TABLE IF NOT EXISTS frames(
+                        name TEXT PRIMARY KEY,
+                        parent TEXT,
+                        R00 REAL,
+                        R01 REAL,
+                        R02 REAL,
+                        R10 REAL,
+                        R11 REAL,
+                        R12 REAL,
+                        R20 REAL,
+                        R21 REAL,
+                        R22 REAL,
+                        t0 REAL,
+                        t1 REAL,
+                        t2 REAL
+                    );
+                    """)
+                cur.execute("INSERT INTO frames VALUES ('world', NULL, 1,0,0, 0,1,0, 0,0,1, 0,0,0)")
         return GetSet()
 
 db = DbConnector()
