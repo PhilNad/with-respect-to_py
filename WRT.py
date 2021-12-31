@@ -1,7 +1,7 @@
 import numpy as np
 import sqlite3 as sql
 import re
-import sympy #spatialmat depends on sympy
+import sympy #spatialmath depends on sympy
 from spatialmath import SE3
 from anytree import NodeMixin, RenderTree
 from pathlib import Path
@@ -16,13 +16,14 @@ class PoseNode(SE3, NodeMixin):
         self.parent         = parent
 
 class SetAs:
-    def __init__(self, frame_name:str, ref_frame_name:str, in_frame_name:str) -> None:
+    def __init__(self, sqlite_connection: sql.Connection, frame_name:str, ref_frame_name:str, in_frame_name:str) -> None:
         self.verifyInput(frame_name)
         self.verifyInput(ref_frame_name)
         self.verifyInput(in_frame_name)
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
         self.__in_frame_name  = in_frame_name
+        self.__sql_connection = sqlite_connection
     def verifyInput(self, input_string:str):
         if not re.match("^[0-9a-z\-]+$", input_string):
             raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the frame name: {}".format(input_string))
@@ -30,16 +31,23 @@ class SetAs:
         assert(type(transfo_matrix) == np.ndarray or type(transfo_matrix) == SE3)
         if type(transfo_matrix) is np.array:
             assert(transfo_matrix.shape == (4,4))
-        #1) Make sure that the __ref_frame_name exists in the DB
-        #2) Remove from DB any frame with  __frame_name
-        #2) Add new frame in the DB
+        
+        with self.__sql_connection as con:
+            cur = con.cursor()
+            #1) Make sure that the __ref_frame_name exists in the DB
+            #2) Remove from DB any frame with  __frame_name
+            cur.execute("DELETE FROM frames WHERE name IS ?",(self.__frame_name))
+            #2) Add new frame in the DB
+            #TODO: Complete this.
+            cur.execute("INSERT INTO frames VALUES (?, ?, 1,0,0, 0,1,0, 0,0,1, 0,0,0)", (self.__frame_name, self.__ref_frame_name))
 
 class GetExpressedIn:
-    def __init__(self, frame_name:str, ref_frame_name:str) -> None:
+    def __init__(self, sqlite_connection: sql.Connection, frame_name:str, ref_frame_name:str) -> None:
         self.verifyInput(frame_name)
         self.verifyInput(ref_frame_name)
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
+        self.__sql_connection = sqlite_connection
     def verifyInput(self, input_string:str):
         if not re.match("^[0-9a-z\-]+$", input_string):
             raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the frame name: {}".format(input_string))
@@ -66,70 +74,95 @@ class GetExpressedIn:
         return X_RF_I
 
 class SetExpressedIn:
-    def __init__(self, frame_name:str, ref_frame_name:str) -> None:
+    def __init__(self, sqlite_connection: sql.Connection, frame_name:str, ref_frame_name:str) -> None:
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
+        self.__sql_connection = sqlite_connection
     def Ei(self, in_frame_name: str) -> SetAs:
-        return SetAs(self.__frame_name, self.__ref_frame_name, in_frame_name)
+        return SetAs(self.__sql_connection, self.__frame_name, self.__ref_frame_name, in_frame_name)
 
 class Setter:
-    def __init__(self, frame_name:str) -> None:
+    def __init__(self, sqlite_connection: sql.Connection, frame_name:str) -> None:
         self.__frame_name = frame_name
+        self.__sql_connection = sqlite_connection
     def Wrt(self, ref_frame_name: str) -> SetExpressedIn:
-        return SetExpressedIn(self.__frame_name, ref_frame_name)
+        return SetExpressedIn(self.__sql_connection, self.__frame_name, ref_frame_name)
 
 class Getter:
-    def __init__(self, frame_name:str) -> None:
+    def __init__(self, sqlite_connection: sql.Connection, frame_name:str) -> None:
         self.__frame_name = frame_name
+        self.__sql_connection = sqlite_connection
     def Wrt(self, ref_frame_name: str) -> GetExpressedIn:
-        return GetExpressedIn(self.__frame_name, ref_frame_name)
+        return GetExpressedIn(self.__sql_connection, self.__frame_name, ref_frame_name)
 
 class GetSet:
+    def __init__(self, sqlite_connection: sql.Connection) -> None:
+        self.__sql_connection = sqlite_connection
     def Get(self, frame_name: str) -> Getter:
-        return Getter(frame_name)
+        return Getter(self.__sql_connection, frame_name)
     def Set(self, frame_name: str) -> Setter:
         if frame_name == "world":
             raise ValueError("Cannot change the 'world' reference frame as it's assumed to be an inertial/immobile frame.")
-        return Setter(frame_name)
+        return Setter(self.__sql_connection, frame_name)
 
 class DbConnector:
     '''Connect to Sqlite database and create new world if needed. 
     To limit concurrent actions, each world is in its one database/file.
     When a new world is mentioned, a new database is created.'''
     def __init__(self):
+        self.__opened_connection = None
+        self.__opened_world_name = None
         return
     def In(self, worldName: str) -> GetSet:
-        if not re.match("^[0-9a-z\-]+$", worldName):
-            raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the world name.")
-        #Get a list of existing databases
-        current_dir = Path('.')
-        db_list = [x for x in current_dir.iterdir() if x.is_file() and x.suffix == '.db']
-        db_name_list = [x.stem for x in db_list]
-        #If the world name is not in the list, create a new database
-        if worldName not in db_name_list:
+        #If the connection is already open, simply return it
+        if self.__opened_connection is not None and self.__opened_world_name == worldName:
+            return GetSet(self.__opened_connection)
+        #Otherwise, connect to the database
+        else:
+            if not re.match("^[0-9a-z\-]+$", worldName):
+                raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the world name.")
+            #Get a list of existing databases
+            current_dir = Path('.')
+            db_list = [x for x in current_dir.iterdir() if x.is_file() and x.suffix == '.db']
+            db_name_list = [x.stem for x in db_list]
+            #Connect to the database
             con = sql.connect(worldName)
-            cur = con.cursor()
-            with con:
-                cur.executescript("""
-                    CREATE TABLE IF NOT EXISTS frames(
-                        name TEXT PRIMARY KEY,
-                        parent TEXT,
-                        R00 REAL,
-                        R01 REAL,
-                        R02 REAL,
-                        R10 REAL,
-                        R11 REAL,
-                        R12 REAL,
-                        R20 REAL,
-                        R21 REAL,
-                        R22 REAL,
-                        t0 REAL,
-                        t1 REAL,
-                        t2 REAL
-                    );
-                    """)
-                cur.execute("INSERT INTO frames VALUES ('world', NULL, 1,0,0, 0,1,0, 0,0,1, 0,0,0)")
-        return GetSet()
+            #If the world name is not in the list, create a new database
+            if worldName not in db_name_list:
+                cur = con.cursor()
+                with con:
+                    #Each row describes a single frame with
+                    # - name : Unique string
+                    # - parent: Name of parent frame (reference this frame is defined from)
+                    # - R00,R01,R02: First row of the rotation matrix in the transformation
+                    # - R10,R11,R12: Second row of the rotation matrix in the transformation
+                    # - R20,R21,R22: Third row of the rotation matrix in the transformation
+                    # - t0,t1,t2: Translation vector in the transformation
+                    #The 'world' frame is always the inertial/immobile reference frame, it's parent is set to NULL/None.
+                    #All other frames must have a non-NULL parent, creating a tree with a single root.
+                    cur.executescript("""
+                        CREATE TABLE IF NOT EXISTS frames(
+                            name TEXT PRIMARY KEY,
+                            parent TEXT,
+                            R00 REAL,
+                            R01 REAL,
+                            R02 REAL,
+                            R10 REAL,
+                            R11 REAL,
+                            R12 REAL,
+                            R20 REAL,
+                            R21 REAL,
+                            R22 REAL,
+                            t0 REAL,
+                            t1 REAL,
+                            t2 REAL
+                        );
+                        """)
+                    cur.execute("INSERT INTO frames VALUES ('world', NULL, 1,0,0, 0,1,0, 0,0,1, 0,0,0)")
+            
+            self.__opened_connection = con
+            self.__opened_world_name = worldName
+            return GetSet(con)
 
 db = DbConnector()
 db.In('my-world').Get('table').Wrt('world').Ei('world')
