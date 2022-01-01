@@ -45,9 +45,13 @@ class SetAs:
             assert(len(rows) == 1)
             #2) Remove from DB any frame with  __frame_name
             cur.execute("DELETE FROM frames WHERE name IS ?",(self.__frame_name,))
-            #3) Add new frame in the DB
-            R = transfo_matrix.R
-            t = transfo_matrix.t
+            #3) Take into account the  fact that the transformation can be expressed in a frame different from the reference frame
+            #       Like: SET object WRT table EI world
+            getter = GetExpressedIn(self.__sql_connection, self.__in_frame_name, self.__ref_frame_name)
+            X_RI_R = getter.Ei(self.__ref_frame_name)
+            R = X_RI_R.R @ transfo_matrix.R
+            t = X_RI_R.R @ transfo_matrix.t
+            #4) Add new frame in the DB
             cur.execute("INSERT INTO frames VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)", 
                 (self.__frame_name, 
                 self.__ref_frame_name, 
