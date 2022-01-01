@@ -17,59 +17,123 @@ class PoseNode(SE3, NodeMixin):
 
 class SetAs:
     def __init__(self, sqlite_connection: sql.Connection, frame_name:str, ref_frame_name:str, in_frame_name:str) -> None:
-        self.verifyInput(frame_name)
-        self.verifyInput(ref_frame_name)
-        self.verifyInput(in_frame_name)
+        self.__verifyInput(frame_name)
+        self.__verifyInput(ref_frame_name)
+        self.__verifyInput(in_frame_name)
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
         self.__in_frame_name  = in_frame_name
         self.__sql_connection = sqlite_connection
-    def verifyInput(self, input_string:str):
+    def __verifyInput(self, input_string:str):
         if not re.match("^[0-9a-z\-]+$", input_string):
             raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the frame name: {}".format(input_string))
     def As(self, transfo_matrix):
         assert(type(transfo_matrix) == np.ndarray or type(transfo_matrix) == SE3)
-        if type(transfo_matrix) is np.array:
-            assert(transfo_matrix.shape == (4,4))
+        if type(transfo_matrix) is np.ndarray:
+            if transfo_matrix.shape != (4,4):
+                raise ValueError("The shape of the transformation matrix should be (4,4) but we got {}".format(transfo_matrix.shape))
+            else:
+                transfo_matrix = SE3(transfo_matrix)
         
         with self.__sql_connection as con:
             cur = con.cursor()
             #1) Make sure that the __ref_frame_name exists in the DB
+            rows = [row for row in cur.execute("SELECT * FROM frames WHERE name IS ?",(self.__ref_frame_name,))]
+            if len(rows) == 0:
+                raise ValueError("The reference frame '{}' does not exist in this world.".format(self.__ref_frame_name))
+            #The name field is a UNIQUE field in the database, consequently not more than one row should be returned.
+            assert(len(rows) == 1)
             #2) Remove from DB any frame with  __frame_name
-            cur.execute("DELETE FROM frames WHERE name IS ?",(self.__frame_name))
-            #2) Add new frame in the DB
-            #TODO: Complete this.
-            cur.execute("INSERT INTO frames VALUES (?, ?, 1,0,0, 0,1,0, 0,0,1, 0,0,0)", (self.__frame_name, self.__ref_frame_name))
+            cur.execute("DELETE FROM frames WHERE name IS ?",(self.__frame_name,))
+            #3) Add new frame in the DB
+            R = transfo_matrix.R
+            t = transfo_matrix.t
+            cur.execute("INSERT INTO frames VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)", 
+                (self.__frame_name, 
+                self.__ref_frame_name, 
+                R[0,0],R[0,1],R[0,2], 
+                R[1,0],R[1,1],R[1,2], 
+                R[2,0],R[2,1],R[2,2], 
+                t[0],t[1],t[2]))
 
 class GetExpressedIn:
     def __init__(self, sqlite_connection: sql.Connection, frame_name:str, ref_frame_name:str) -> None:
-        self.verifyInput(frame_name)
-        self.verifyInput(ref_frame_name)
+        self.__verifyInput(frame_name)
+        self.__verifyInput(ref_frame_name)
         self.__frame_name     = frame_name
         self.__ref_frame_name = ref_frame_name
         self.__sql_connection = sqlite_connection
-    def verifyInput(self, input_string:str):
+    def __verifyInput(self, input_string:str):
         if not re.match("^[0-9a-z\-]+$", input_string):
             raise ValueError("Only [a-z], [0-9] and dash (-) is allowed in the frame name: {}".format(input_string))
+    def __getParentFrame(self, frame_name:str) -> tuple:
+        '''Return the parent frame of frame_name if one exists, otherwise return None.'''
+        with self.__sql_connection as con:
+            cur = con.cursor()
+            rows = [row for row in cur.execute("SELECT * FROM frames WHERE name IS ?",(frame_name,))]
+            if len(rows) == 0:
+                raise ValueError("The reference frame '{}' does not exist in this world.".format(frame_name))
+            #The name field is a UNIQUE field in the database, consequently not more than one row should be returned.
+            assert(len(rows) == 1)
+            
+            #Load data
+            row = rows[0]
+            name   = row[0]
+            parent = row[1]
+
+            R00    = row[2]
+            R01    = row[3]
+            R02    = row[4]
+            
+            R10    = row[5]
+            R11    = row[6]
+            R12    = row[7]
+            
+            R20    = row[8]
+            R21    = row[9]
+            R22    = row[10]
+
+            t0     = row[11]
+            t1     = row[12]
+            t2     = row[13]
+
+            #Build a transformation matrix
+            mat = np.eye(4)
+            mat[0,0:3] = [R00,R01,R02]
+            mat[1,0:3] = [R10,R11,R12]
+            mat[2,0:3] = [R20,R21,R22]
+            mat[0:3,3] = [t0,t1,t2]
+            transfo = SE3(mat)
+
+            return (name, parent, transfo)
+
+    def __poseWrtWorld(self, frame_name:str) -> SE3:
+        '''Return the pose of frame_name relative to world reference frame, expressed in world.'''
+        (name, parent, new_transfo) = self.__getParentFrame(frame_name)
+        while parent is not None:
+            (name, parent, transfo) = self.__getParentFrame(parent)
+            new_transfo = transfo @ new_transfo
+        return new_transfo
+
     def Ei(self, in_frame_name: str) -> SE3:
-        self.verifyInput(in_frame_name)
+        self.__verifyInput(in_frame_name)
         #Using Drake's monogram notation (https://drake.mit.edu/doxygen_cxx/group__multibody__notation__basics.html)
 
         #1) Make sure __frame_name, __ref_frame_name and in_frame_name exist in the DB
         #2) Get __frame_name     WRT world EI world
-        X_WF_W = SE3()
+        X_WF_W = self.__poseWrtWorld(self.__frame_name)
         #3) Get __ref_frame_name WRT world EI world
-        X_WR_W = SE3()
+        X_WR_W = self.__poseWrtWorld(self.__ref_frame_name)
         X_RW_W = SE3(-X_WR_W.t[0], -X_WR_W.t[1], -X_WR_W.t[2])
         #4) Get in_frame_name    WRT world EI world
-        X_WI_W = SE3()
+        X_WI_W = self.__poseWrtWorld(in_frame_name)
         X_IW_I = X_WI_W.inv()
         #5) Compute the __frame_name WRT __ref_frame_name EI world
         X_RF_W = X_RW_W @ X_WF_W
         #6) Change the "expressed in"
         mat = np.eye(4)
-        mat[0:3, 0:3] = X_IW_I @ X_RF_W
-        mat[0:3, 3]   = X_IW_I @ X_RF_W.t
+        mat[0:3, 0:3] = X_IW_I.R @ X_RF_W.R
+        mat[0:3, 3]   = X_IW_I.R @ X_RF_W.t
         X_RF_I = SE3(mat)
         return X_RF_I
 
@@ -129,7 +193,7 @@ class DbConnector:
             db_list = [x for x in current_dir.iterdir() if x.is_file() and x.suffix == '.db']
             db_name_list = [x.stem for x in db_list]
             #Connect to the database
-            con = sql.connect(worldName)
+            con = sql.connect(worldName+".db")
             #If the world name is not in the list, create a new database
             if worldName not in db_name_list:
                 cur = con.cursor()
@@ -168,4 +232,10 @@ class DbConnector:
             return GetSet(con)
 
 db = DbConnector()
-db.In('my-world').Get('table').Wrt('world').Ei('world')
+mat = np.eye(4)
+mat[0:3, 3] = [1,1,1]
+db.In('my-world').Set('table').Wrt('world').Ei('world').As(mat)
+pose = SE3.Rx(30, "deg", t=[0.5,0.5,0])
+db.In('my-world').Set('object').Wrt('table').Ei('table').As(pose)
+
+db.In('my-world').Get('object').Wrt('world').Ei('world')
