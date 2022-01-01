@@ -2,7 +2,9 @@ import numpy as np
 import sqlite3 as sql
 import re
 import sympy #spatialmath depends on sympy
+import matplotlib.pyplot as plt
 from spatialmath import SE3
+from spatialmath.base import *
 from anytree import NodeMixin, RenderTree
 from pathlib import Path
 
@@ -14,6 +16,18 @@ class PoseNode(SE3, NodeMixin):
         self.name           = frame_name
         self.relative_pose  = relative_pose
         self.parent         = parent
+
+class Visualize():
+    '''Visualize all frames in the database using Matplotlib.'''
+    def __init__(self, worldName:str) -> None:
+        con = sql.connect(worldName+".db")
+        with con:
+            frame_names = [row[0] for row in con.execute("SELECT name FROM frames")]
+            db = DbConnector()
+            for fn in frame_names:
+                X_WF_W = db.In(worldName).Get(fn).Wrt('world').Ei('world')
+                trplot( X_WF_W.A, frame=fn)
+            plt.show()
 
 class SetAs:
     def __init__(self, sqlite_connection: sql.Connection, frame_name:str, ref_frame_name:str, in_frame_name:str) -> None:
@@ -36,23 +50,22 @@ class SetAs:
                 transfo_matrix = SE3(transfo_matrix)
         
         with self.__sql_connection as con:
-            cur = con.cursor()
             #1) Make sure that the __ref_frame_name exists in the DB
-            rows = [row for row in cur.execute("SELECT * FROM frames WHERE name IS ?",(self.__ref_frame_name,))]
+            rows = [row for row in con.execute("SELECT * FROM frames WHERE name IS ?",(self.__ref_frame_name,))]
             if len(rows) == 0:
                 raise ValueError("The reference frame '{}' does not exist in this world.".format(self.__ref_frame_name))
             #The name field is a UNIQUE field in the database, consequently not more than one row should be returned.
             assert(len(rows) == 1)
             #2) Remove from DB any frame with  __frame_name
-            cur.execute("DELETE FROM frames WHERE name IS ?",(self.__frame_name,))
-            #3) Take into account the  fact that the transformation can be expressed in a frame different from the reference frame
+            con.execute("DELETE FROM frames WHERE name IS ?",(self.__frame_name,))
+            #3) Take into account the fact that the transformation can be expressed in a frame different from the reference frame
             #       Like: SET object WRT table EI world
             getter = GetExpressedIn(self.__sql_connection, self.__in_frame_name, self.__ref_frame_name)
             X_RI_R = getter.Ei(self.__ref_frame_name)
             R = X_RI_R.R @ transfo_matrix.R
             t = X_RI_R.R @ transfo_matrix.t
             #4) Add new frame in the DB
-            cur.execute("INSERT INTO frames VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)", 
+            con.execute("INSERT INTO frames VALUES (?, ?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)", 
                 (self.__frame_name, 
                 self.__ref_frame_name, 
                 R[0,0],R[0,1],R[0,2], 
@@ -73,8 +86,7 @@ class GetExpressedIn:
     def __getParentFrame(self, frame_name:str) -> tuple:
         '''Return the parent frame of frame_name if one exists, otherwise return None.'''
         with self.__sql_connection as con:
-            cur = con.cursor()
-            rows = [row for row in cur.execute("SELECT * FROM frames WHERE name IS ?",(frame_name,))]
+            rows = [row for row in con.execute("SELECT * FROM frames WHERE name IS ?",(frame_name,))]
             if len(rows) == 0:
                 raise ValueError("The reference frame '{}' does not exist in this world.".format(frame_name))
             #The name field is a UNIQUE field in the database, consequently not more than one row should be returned.
@@ -243,3 +255,5 @@ pose = SE3.Rx(30, "deg", t=[0.5,0.5,0])
 db.In('my-world').Set('object').Wrt('table').Ei('table').As(pose)
 
 db.In('my-world').Get('object').Wrt('world').Ei('world')
+
+Visualize('my-world')
