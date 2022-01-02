@@ -1,7 +1,18 @@
 # With-Respect-To (+ Expressed-In)
 Simple library that manages databases of 3D transformations with explicit accessors.
 
-## Usage
+## Installation
+To install, `cd` into the repository directory (the one with `setup.py`) and run:
+```bash
+pip install .
+```
+or
+```bash
+pip install -e .
+```
+The `-e` flag tells pip to install the package in-place, which lets you make changes to the code without having to reinstall every time. *Do not do this on shared workstations!*
+
+## Usage of the Command-Line Interface
 ```
 usage: WRT [-h] --In world_name (--Get frame_name | --Set frame_name) --Wrt ref_frame_name --Ei in_frame_name [--As pose] [-v]
 
@@ -17,6 +28,19 @@ options:
   --As pose             If setting a frame, a string representation of the array defining the pose with rotation R and translation t: [[R00,R01,R02,t0],[R10,R11,R12,t1],[R20,R21,R22,t2],[0,0,0,1]]
   -v, --version         show program's version number and exit
 ```
+
+### Example from Bash
+```bash
+> python3 WRT.py --In test --Set a --Wrt world --Ei world --As [[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]]
+> python3 WRT.py --In test --Get a --Wrt world --Ei world
+[[1. 0. 0. 1.]
+ [0. 1. 0. 1.]
+ [0. 0. 1. 1.]
+ [0. 0. 0. 1.]]
+```
+
+### Example from Python
+See `test.py`.
 
 ## Goals
 - Simple. A single 3D convention is used and is explicitly defined.
@@ -45,3 +69,8 @@ When using the program from Bash, the Python first import some libraries, which 
 Can be used by calling the python program with a single string as the argument. We could also support multiple arguments (--get, --set, --in, --wrt, --ei, --as)
 - Get: `"In(my-world).Get(end-effector).Wrt(table).Ei(world)"`
 - Set: `"In(my-world).Set(end-effector).Wrt(table).Ei(world).As([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])"`
+
+## TODO
+- Test that using this library from multiple Python scripts produces the intended results.
+- Port this library to C++ and drop the spatialmath dependency.
+- Make Julia and Python bindings to the C++ program.
