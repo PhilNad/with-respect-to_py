@@ -26,7 +26,7 @@ options:
 
 ## Performances
 Currently, a GET operation performed from within Python takes about 0.004 seconds to execute while a SET operation from within Python takes about 0.04 seconds -- 10x slower than GET.
-When using the program from Bash, the Python first import some libraries, which takes a considerable amount of time. In particular, matplotlib and spatialmath are especially slow. In this scenario, a single GET/SET operation takes about 1.85 seconds to execute, which is prohibitively slow.
+When using the program from Bash, the Python first import some libraries, which takes a considerable amount of time. In particular, matplotlib and spatialmath are especially slow. In this scenario, a single GET/SET operation takes about 1.85 seconds to execute, which is prohibitively slow. To make this faster, the program would probably need to be ported to C++ (and based on Eigen) such that calling it from Bash becomes very fast as there is no module import step. 
 
 ## Design
 - Uses [Peter Corke's SpatialMath library](https://github.com/petercorke/spatialmath-python)

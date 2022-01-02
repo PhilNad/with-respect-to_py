@@ -2,7 +2,6 @@ import numpy as np
 import sqlite3 as sql
 import re
 import json
-#import sympy #spatialmath depends on sympy
 import argparse
 from spatialmath import SE3
 from spatialmath.base import trplot
@@ -254,17 +253,7 @@ def init_argparse():
 
         return parser
 
-'''import time
-start = time.time()
-db = DbConnector()
-pose = np.array([[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]])
-db.In('test').Set('a').Wrt('world').Ei('world').As(pose)
-print('Executed in {} seconds'.format(time.time()-start))
-exit()
 
-#Get takes 0.004 sec
-#Set takes 0.04 sec
-'''
 if __name__ == '__main__':
     parser  = init_argparse()
     args    = parser.parse_args()
@@ -286,30 +275,5 @@ if __name__ == '__main__':
         pose = db.In(args.world_name).Get(args.get_frame_name).Wrt(args.ref_frame_name).Ei(args.in_frame_name)
         #Print the matrix representation of the pose
         print(pose.A)
-
-''' BEGIN TEST CASES
-db = DbConnector()
-pose = np.array([[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]])
-db.In('test').Set('a').Wrt('world').Ei('world').As(pose)
-
-pose = SE3.Rx(90, "deg")
-db.In('test').Set('b').Wrt('a').Ei('a').As(pose)
-
-pose = SE3.Rx(0, "deg", t=[1,0,0])
-db.In('test').Set('c').Wrt('b').Ei('b').As(pose)
-
-pose = SE3.Rz(90, "deg", t=[1,1,0])
-db.In('test').Set('d').Wrt('b').Ei('b').As(pose)
-
-
-assert(db.In('test').Get('a').Wrt('b').Ei('b')          == SE3(np.array([[1,0,0,0],[0,0,1,0],[0,-1,0,0],[0,0,0,1]])))
-assert(db.In('test').Get('a').Wrt('b').Ei('a')          == SE3(np.eye(4)))
-assert(db.In('test').Get('c').Wrt('world').Ei('world')  == SE3(np.array([[1,0,0,2],[0,0,-1,1],[0,1,0,1],[0,0,0,1]])))
-assert(db.In('test').Get('c').Wrt('world').Ei('c')      == SE3(np.array([[1,0,0,2],[0,1,0,1],[0,0,1,-1],[0,0,0,1]])))
-assert(db.In('test').Get('c').Wrt('world').Ei('a')      == SE3(np.array([[1,0,0,2],[0,0,-1,1],[0,1,0,1],[0,0,0,1]])))
-assert(db.In('test').Get('d').Wrt('a').Ei('a')          == SE3(np.array([[0,-1,0,1],[0,0,-1,0],[1,0,0,1],[0,0,0,1]])))
-
-Visualize('test')
-END  TEST CASES '''
 
 
