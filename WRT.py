@@ -1,25 +1,18 @@
 import numpy as np
 import sqlite3 as sql
 import re
-import sympy #spatialmath depends on sympy
-import matplotlib.pyplot as plt
+import json
+#import sympy #spatialmath depends on sympy
+import argparse
 from spatialmath import SE3
-from spatialmath.base import *
-from anytree import NodeMixin, RenderTree
+from spatialmath.base import trplot
 from pathlib import Path
-
-
-class PoseNode(SE3, NodeMixin):
-    '''Describe a node in the pose graph.'''
-    def __init__(self, frame_name: str, relative_pose: SE3, parent=None):
-        super(SE3, self).__init__()
-        self.name           = frame_name
-        self.relative_pose  = relative_pose
-        self.parent         = parent
 
 class Visualize():
     '''Visualize all frames in the database using Matplotlib.'''
     def __init__(self, worldName:str) -> None:
+        #Matplotlib is imported here for performance enhancement
+        import matplotlib.pyplot as plt
         con = sql.connect(worldName+".db")
         with con:
             frame_names = [row[0] for row in con.execute("SELECT name FROM frames")]
@@ -247,6 +240,54 @@ class DbConnector:
             self.__opened_world_name = worldName
             return GetSet(con)
 
+def init_argparse():
+        parser = argparse.ArgumentParser(prog='WRT',description="Manages a database of reference frames.")
+
+        group = parser.add_mutually_exclusive_group(required=True)
+        parser.add_argument('--In',  metavar='world_name',      dest='world_name',     required=True,    help='The world name the frame lives in.')
+        group.add_argument( '--Get', metavar='frame_name',      dest='get_frame_name',                   help='Name of the frame to get.')
+        group.add_argument( '--Set', metavar='frame_name',      dest='set_frame_name',                   help='Name of the frame to set.')
+        parser.add_argument('--Wrt', metavar='ref_frame_name',  dest='ref_frame_name', required=True,    help='Name of the reference frame the frame is described with respect to.')
+        parser.add_argument('--Ei',  metavar='in_frame_name',   dest='in_frame_name',  required=True,    help='Name of the reference frame the frame is expressed in.')
+        parser.add_argument('--As',  metavar='pose',            dest='pose',                             help='If setting a frame, a string representation of the array defining the pose with rotation R and translation t: [[R00,R01,R02,t0],[R10,R11,R12,t1],[R20,R21,R22,t2],[0,0,0,1]]')
+        parser.add_argument("-v", "--version", action="version",version = f"{parser.prog} version 0.1.0")
+
+        return parser
+
+'''import time
+start = time.time()
+db = DbConnector()
+pose = np.array([[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]])
+db.In('test').Set('a').Wrt('world').Ei('world').As(pose)
+print('Executed in {} seconds'.format(time.time()-start))
+exit()
+
+#Get takes 0.004 sec
+#Set takes 0.04 sec
+'''
+if __name__ == '__main__':
+    parser  = init_argparse()
+    args    = parser.parse_args()
+
+    if args.set_frame_name is not None:
+        #The user wants to SET a frame
+        #Verify that the pose is specified (its not a required argument)
+        if args.pose is None:
+            print('{}: error: The --As argument is required in this context.'.format(parser.prog))
+            raise argparse.ArgumentError()
+        #Build a matrix from the string representation of the pose
+        mat = np.array(json.loads(args.pose))
+        #Set the frame in the database
+        db = DbConnector()
+        db.In(args.world_name).Set(args.set_frame_name).Wrt(args.ref_frame_name).Ei(args.in_frame_name).As(mat)
+    else:
+        #The user wants to GET a frame
+        db = DbConnector()
+        pose = db.In(args.world_name).Get(args.get_frame_name).Wrt(args.ref_frame_name).Ei(args.in_frame_name)
+        #Print the matrix representation of the pose
+        print(pose.A)
+
+''' BEGIN TEST CASES
 db = DbConnector()
 pose = np.array([[1,0,0,1],[0,1,0,1],[0,0,1,1],[0,0,0,1]])
 db.In('test').Set('a').Wrt('world').Ei('world').As(pose)
@@ -269,5 +310,6 @@ assert(db.In('test').Get('c').Wrt('world').Ei('a')      == SE3(np.array([[1,0,0,
 assert(db.In('test').Get('d').Wrt('a').Ei('a')          == SE3(np.array([[0,-1,0,1],[0,0,-1,0],[1,0,0,1],[0,0,0,1]])))
 
 Visualize('test')
+END  TEST CASES '''
 
 
