@@ -1,3 +1,5 @@
+# This library is now replace by the Python bindings of the [with-respect-to C++ Library](https://github.com/PhilNad/with-respect-to).
+
 # With-Respect-To (+ Expressed-In)
 Simple library that manages databases of 3D transformations with explicit accessors.
 
@@ -69,8 +71,3 @@ When using the program from Bash, the Python first import some libraries, which 
 Can be used by calling the python program with a single string as the argument. We could also support multiple arguments (--get, --set, --in, --wrt, --ei, --as)
 - Get: `"In(my-world).Get(end-effector).Wrt(table).Ei(world)"`
 - Set: `"In(my-world).Set(end-effector).Wrt(table).Ei(world).As([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])"`
-
-## TODO
-- Test that using this library from multiple Python scripts produces the intended results.
-- Port this library to C++ and drop the spatialmath dependency.
-- Make Julia and Python bindings to the C++ program.
