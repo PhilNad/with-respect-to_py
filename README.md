@@ -1,4 +1,4 @@
-# This library is now replace by the Python bindings of the [with-respect-to C++ Library](https://github.com/PhilNad/with-respect-to).
+# This library is now replaced by the Python bindings of the [with-respect-to C++ Library](https://github.com/PhilNad/with-respect-to).
 
 # With-Respect-To (+ Expressed-In)
 Simple library that manages databases of 3D transformations with explicit accessors.
